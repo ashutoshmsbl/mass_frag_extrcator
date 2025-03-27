@@ -1,9 +1,11 @@
 import streamlit as st
 import pandas as pd
+import io
 
 # Function to extract m/z data
-def extract_mz_abundance(file_path, amino_acid, selected_sheets, mz_ranges):
-    xl = pd.ExcelFile(file_path)
+def extract_mz_abundance(uploaded_file, amino_acid, selected_sheets, mz_ranges):
+    # Read Excel file directly from uploaded file
+    xl = pd.ExcelFile(uploaded_file)
     output_data = {}
 
     for sheet in selected_sheets:
@@ -39,6 +41,7 @@ if 'mz_ranges' not in st.session_state:
 uploaded_file = st.file_uploader("Upload Excel File", type=['xlsx'])
 
 if uploaded_file:
+    # Read Excel file using Pandas
     xl = pd.ExcelFile(uploaded_file)
     sheets = xl.sheet_names
     df_sample = xl.parse(sheets[0])
@@ -80,9 +83,15 @@ if uploaded_file:
             if df_result is not None:
                 st.success("Data processed successfully!")
 
-                # Save to Excel
-                output_filename = f"{amino_acid}_data.xlsx"
-                df_result.to_excel(output_filename, index=False)
-                st.download_button("Download Processed Data", df_result.to_csv(index=False), output_filename, "text/csv")
+                # Save to Excel in-memory
+                output = io.BytesIO()
+                with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+                    df_result.to_excel(writer, index=False, sheet_name="Results")
+                    writer.close()
+                
+                output.seek(0)
+                
+                # Download button for Excel file
+                st.download_button("Download Processed Data", output, f"{amino_acid}_data.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             else:
                 st.warning("No matching data found.")
