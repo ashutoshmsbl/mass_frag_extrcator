@@ -53,7 +53,7 @@ if uploaded_file:
     compound = st.selectbox("Select Compound", compounds)
 
     # Sheet Selection
-    st.write("### Select Sheets")
+    st.write("### Select Data files")
     select_all_sheets = st.checkbox("Select All Sheets")
     selected_sheets = st.multiselect("Choose Sheets", sheets, default=sheets if select_all_sheets else [])
 
