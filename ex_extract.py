@@ -3,7 +3,7 @@ import pandas as pd
 import io
 
 # Function to extract m/z data
-def extract_mz_abundance(uploaded_file, amino_acid, selected_sheets, mz_ranges):
+def extract_mz_abundance(uploaded_file, compound, selected_sheets, mz_ranges):
     # Read Excel file directly from uploaded file
     xl = pd.ExcelFile(uploaded_file)
     output_data = {}
@@ -11,14 +11,14 @@ def extract_mz_abundance(uploaded_file, amino_acid, selected_sheets, mz_ranges):
     for sheet in selected_sheets:
         df = xl.parse(sheet)
 
-        if 'm/z' not in df.columns or amino_acid not in df.columns:
+        if 'm/z' not in df.columns or compound not in df.columns:
             st.warning(f"Required columns not found in sheet: {sheet}")
             continue
 
         df_filtered = pd.DataFrame()
         for mz_min, mz_max in mz_ranges:
-            df_temp = df[(df['m/z'].between(mz_min, mz_max))][['m/z', amino_acid]]
-            df_temp = df_temp.rename(columns={amino_acid: f"{amino_acid}_{sheet}"})
+            df_temp = df[(df['m/z'].between(mz_min, mz_max))][['m/z', compound]]
+            df_temp = df_temp.rename(columns={compound: f"{compound}_{sheet}"})
             df_filtered = pd.concat([df_filtered, df_temp], ignore_index=True)
 
         if not df_filtered.empty:
@@ -45,10 +45,12 @@ if uploaded_file:
     xl = pd.ExcelFile(uploaded_file)
     sheets = xl.sheet_names
     df_sample = xl.parse(sheets[0])
-    amino_acids = [col for col in df_sample.columns if col != 'm/z']
 
-    # Amino Acid Selection
-    amino_acid = st.selectbox("Select an Amino Acid", amino_acids)
+    # Remove "m/z:" and "Unnamed:" from compound list
+    compounds = [col for col in df_sample.columns if not (col.lower().startswith("m/z") or "unnamed" in col.lower())]
+
+    # Compound Selection
+    compound = st.selectbox("Select Compound", compounds)
 
     # Sheet Selection
     st.write("### Select Sheets")
@@ -67,18 +69,22 @@ if uploaded_file:
         else:
             st.error("Min m/z should be less than Max m/z")
 
-    # Display added ranges
+    # Display added ranges with remove option
     if st.session_state.mz_ranges:
         st.write("#### Selected m/z Ranges:")
-        for r in st.session_state.mz_ranges:
-            st.write(f"{r[0]} - {r[1]}")
+        for i, r in enumerate(st.session_state.mz_ranges):
+            col1, col2 = st.columns([4, 1])
+            col1.write(f"{r[0]} - {r[1]}")
+            if col2.button(f"❌ Remove", key=f"remove_{i}"):
+                st.session_state.mz_ranges.pop(i)
+                st.experimental_rerun()  # Refresh UI to reflect changes
 
     # Process and Save Data
     if st.button("Process Data"):
         if not selected_sheets or not st.session_state.mz_ranges:
             st.error("Please select at least one sheet and add m/z ranges.")
         else:
-            df_result = extract_mz_abundance(uploaded_file, amino_acid, selected_sheets, st.session_state.mz_ranges)
+            df_result = extract_mz_abundance(uploaded_file, compound, selected_sheets, st.session_state.mz_ranges)
 
             if df_result is not None:
                 st.success("Data processed successfully!")
@@ -92,6 +98,6 @@ if uploaded_file:
                 output.seek(0)
                 
                 # Download button for Excel file
-                st.download_button("Download Processed Data", output, f"{amino_acid}_data.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                st.download_button("Download Processed Data", output, f"{compound}_data.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             else:
                 st.warning("No matching data found.")
