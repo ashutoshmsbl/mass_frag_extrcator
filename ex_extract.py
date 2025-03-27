@@ -31,7 +31,7 @@ def extract_mz_abundance(uploaded_file, amino_acid, selected_sheets, mz_ranges):
         return None
 
 # Streamlit UI
-st.title("Amino Acid Data Extraction Tool")
+st.title("13C Mass Fragment Data Extraction Tool")
 
 # Initialize session state for mz_ranges
 if 'mz_ranges' not in st.session_state:
