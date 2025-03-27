@@ -7,6 +7,7 @@ def extract_mz_abundance(uploaded_file, compound, selected_sheets, mz_ranges):
     # Read Excel file directly from uploaded file
     xl = pd.ExcelFile(uploaded_file)
     output_data = {}
+    mz_values = set()
 
     for sheet in selected_sheets:
         df = xl.parse(sheet)
@@ -20,14 +21,14 @@ def extract_mz_abundance(uploaded_file, compound, selected_sheets, mz_ranges):
             df_temp = df[df['m/z'].between(mz_min, mz_max)][['m/z', compound]]
             df_temp = df_temp.rename(columns={compound: f"{compound}_{sheet}"})
             df_filtered = pd.concat([df_filtered, df_temp], ignore_index=True)
+            mz_values.update(df_temp['m/z'].tolist())
 
         if not df_filtered.empty:
-            # Remove "m/z" column before saving
-            df_filtered.drop(columns=['m/z'], inplace=True)
-            output_data[sheet] = df_filtered
+            output_data[sheet] = df_filtered.set_index('m/z')
 
     if output_data:
         combined_df = pd.concat(output_data.values(), axis=1)
+        combined_df.reset_index(inplace=True)
         return combined_df
     else:
         return None
