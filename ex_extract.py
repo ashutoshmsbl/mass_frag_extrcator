@@ -1,9 +1,9 @@
 import streamlit as st
 import pandas as pd
-import io
 
-def extract_mz_abundance(file, amino_acid, selected_sheets, mz_ranges):
-    xl = pd.ExcelFile(file)
+# Function to extract m/z data
+def extract_mz_abundance(file_path, amino_acid, selected_sheets, mz_ranges):
+    xl = pd.ExcelFile(file_path)
     output_data = {}
 
     for sheet in selected_sheets:
@@ -31,7 +31,8 @@ def extract_mz_abundance(file, amino_acid, selected_sheets, mz_ranges):
 # Streamlit UI
 st.title("Amino Acid Data Extraction Tool")
 
-uploaded_file = st.file_uploader("Upload Excel File", type=["xlsx"])
+# File Upload
+uploaded_file = st.file_uploader("Upload Excel File", type=['xlsx'])
 
 if uploaded_file:
     xl = pd.ExcelFile(uploaded_file)
@@ -39,40 +40,47 @@ if uploaded_file:
     df_sample = xl.parse(sheets[0])
     amino_acids = [col for col in df_sample.columns if col != 'm/z']
 
+    # Amino Acid Selection
     amino_acid = st.selectbox("Select an Amino Acid", amino_acids)
-    selected_sheets = st.multiselect("Select Sheets", sheets)
 
-    mz_ranges = []
+    # Sheet Selection
+    st.write("### Select Sheets")
+    select_all_sheets = st.checkbox("Select All Sheets")
+    selected_sheets = st.multiselect("Choose Sheets", sheets, default=sheets if select_all_sheets else [])
+
+    # m/z Range Input
     st.write("### Add m/z Ranges")
+    mz_ranges = []
     mz_min = st.number_input("Min m/z", value=100, step=1)
     mz_max = st.number_input("Max m/z", value=200, step=1)
-    
+
     if st.button("Add Range"):
         if mz_min < mz_max:
             mz_ranges.append((mz_min, mz_max))
-            st.session_state["mz_ranges"] = mz_ranges
+            st.session_state['mz_ranges'] = mz_ranges
+            st.success(f"Added Range: {mz_min}-{mz_max}")
         else:
-            st.error("Min m/z should be less than Max m/z.")
+            st.error("Min m/z should be less than Max m/z")
 
-    if "mz_ranges" in st.session_state:
-        st.write("Selected m/z Ranges:", st.session_state["mz_ranges"])
+    # Display added ranges
+    if 'mz_ranges' in st.session_state:
+        st.write("#### Selected m/z Ranges:")
+        for r in st.session_state['mz_ranges']:
+            st.write(f"{r[0]} - {r[1]}")
 
+    # Process and Save Data
     if st.button("Process Data"):
         if not selected_sheets or not mz_ranges:
-            st.warning("Please select at least one sheet and one m/z range.")
+            st.error("Please select at least one sheet and add m/z ranges.")
         else:
-            with st.spinner("Processing..."):
-                result = extract_mz_abundance(uploaded_file, amino_acid, selected_sheets, st.session_state["mz_ranges"])
-                if result is not None:
-                    st.success("Extraction Completed!")
-                    st.dataframe(result)
+            df_result = extract_mz_abundance(uploaded_file, amino_acid, selected_sheets, st.session_state['mz_ranges'])
 
-                    # Save to Excel and provide download link
-                    output = io.BytesIO()
-                    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-                        result.to_excel(writer, index=False)
-                    output.seek(0)
+            if df_result is not None:
+                st.success("Data processed successfully!")
 
-                    st.download_button("Download Excel File", output, f"{amino_acid}_extracted.xlsx", "application/vnd.ms-excel")
-                else:
-                    st.error("No valid data found.")
+                # Save to Excel
+                output_filename = f"{amino_acid}_data.xlsx"
+                df_result.to_excel(output_filename, index=False)
+                st.download_button("Download Processed Data", df_result.to_csv(index=False), output_filename, "text/csv")
+            else:
+                st.warning("No matching data found.")
