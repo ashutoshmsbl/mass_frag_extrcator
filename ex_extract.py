@@ -31,6 +31,10 @@ def extract_mz_abundance(file_path, amino_acid, selected_sheets, mz_ranges):
 # Streamlit UI
 st.title("Amino Acid Data Extraction Tool")
 
+# Initialize session state for mz_ranges
+if 'mz_ranges' not in st.session_state:
+    st.session_state.mz_ranges = []
+
 # File Upload
 uploaded_file = st.file_uploader("Upload Excel File", type=['xlsx'])
 
@@ -50,30 +54,28 @@ if uploaded_file:
 
     # m/z Range Input
     st.write("### Add m/z Ranges")
-    mz_ranges = []
     mz_min = st.number_input("Min m/z", value=100, step=1)
     mz_max = st.number_input("Max m/z", value=200, step=1)
 
     if st.button("Add Range"):
         if mz_min < mz_max:
-            mz_ranges.append((mz_min, mz_max))
-            st.session_state['mz_ranges'] = mz_ranges
+            st.session_state.mz_ranges.append((mz_min, mz_max))
             st.success(f"Added Range: {mz_min}-{mz_max}")
         else:
             st.error("Min m/z should be less than Max m/z")
 
     # Display added ranges
-    if 'mz_ranges' in st.session_state:
+    if st.session_state.mz_ranges:
         st.write("#### Selected m/z Ranges:")
-        for r in st.session_state['mz_ranges']:
+        for r in st.session_state.mz_ranges:
             st.write(f"{r[0]} - {r[1]}")
 
     # Process and Save Data
     if st.button("Process Data"):
-        if not selected_sheets or not mz_ranges:
+        if not selected_sheets or not st.session_state.mz_ranges:
             st.error("Please select at least one sheet and add m/z ranges.")
         else:
-            df_result = extract_mz_abundance(uploaded_file, amino_acid, selected_sheets, st.session_state['mz_ranges'])
+            df_result = extract_mz_abundance(uploaded_file, amino_acid, selected_sheets, st.session_state.mz_ranges)
 
             if df_result is not None:
                 st.success("Data processed successfully!")
