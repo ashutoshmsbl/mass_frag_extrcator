@@ -39,6 +39,8 @@ st.title("13C Mass Fragment Data Extraction Tool")
 # Initialize session state for m/z ranges
 if 'mz_ranges' not in st.session_state:
     st.session_state.mz_ranges = []
+if 'selected_compound' not in st.session_state:
+    st.session_state.selected_compound = None
 
 # File Upload
 uploaded_file = st.file_uploader("Upload Excel File", type=['xlsx'])
@@ -54,7 +56,12 @@ if uploaded_file:
         compounds = [col for col in df_sample.columns if not (col.lower().startswith("m/z") or "unnamed" in col.lower())]
 
         # Compound Selection
-        compound = st.selectbox("Select Compound", compounds)
+        compound = st.selectbox("Select Compound", compounds, key='compound_selection')
+        
+        # Reset m/z ranges only if a new compound is selected
+        if st.session_state.selected_compound != compound:
+            st.session_state.mz_ranges = []
+        st.session_state.selected_compound = compound
 
         # Sheet Selection
         st.write("### Select Data files")
