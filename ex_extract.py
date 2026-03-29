@@ -19,7 +19,7 @@ def extract_mz_abundance(uploaded_file, compound, selected_sheets, mz_ranges):
         df_filtered = pd.DataFrame()
         for mz_min, mz_max in mz_ranges:
             df_temp = df[df['m/z'].between(mz_min, mz_max)][['m/z', compound]]
-            df_temp = df_temp.rename(columns={compound: f"{compound}_{sheet}"})
+            df_temp = df_temp.rename(columns={compound: f"{sheet}"})
             df_filtered = pd.concat([df_filtered, df_temp], ignore_index=True)
             mz_values.update(df_temp['m/z'].tolist())
 
