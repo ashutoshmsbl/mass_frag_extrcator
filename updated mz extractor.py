@@ -1,6 +1,55 @@
 import streamlit as st
 import pandas as pd
 import io
+import json
+from datetime import datetime, timedelta
+
+# ---------------- SAVE / LOAD RANGE PROFILES ----------------
+def save_profile(name, ranges):
+    try:
+        with open("range_profiles.json", "r") as f:
+            data = json.load(f)
+    except:
+        data = {}
+
+    data[name] = {
+        "ranges": ranges,
+        "last_used": datetime.now().isoformat()
+    }
+
+    with open("range_profiles.json", "w") as f:
+        json.dump(data, f)
+
+
+def load_profiles():
+    try:
+        with open("range_profiles.json", "r") as f:
+            data = json.load(f)
+    except:
+        return {}
+
+    # 🔥 AUTO DELETE OLD PROFILES (>90 days)
+    cleaned_data = {}
+    now = datetime.now()
+
+    for name, info in data.items():
+        last_used = datetime.fromisoformat(info.get("last_used", now.isoformat()))
+        if now - last_used <= timedelta(days=90):
+            cleaned_data[name] = info
+
+    # overwrite cleaned file
+    with open("range_profiles.json", "w") as f:
+        json.dump(cleaned_data, f)
+
+    return cleaned_data
+
+
+def update_last_used(profile_name, data):
+    if profile_name in data:
+        data[profile_name]["last_used"] = datetime.now().isoformat()
+        with open("range_profiles.json", "w") as f:
+            json.dump(data, f)
+
 
 # Function to extract m/z data
 def extract_mz_abundance(uploaded_file, compound, selected_sheets, mz_ranges):
@@ -31,10 +80,13 @@ def extract_mz_abundance(uploaded_file, compound, selected_sheets, mz_ranges):
     else:
         return None
 
+
 # ---------------- UI ----------------
 st.title("13C Mass Fragment Data Extraction Tool")
 
 uploaded_file = st.file_uploader("Upload Excel File", type=['xlsx'])
+
+profiles = load_profiles()
 
 if uploaded_file:
     try:
@@ -51,11 +103,23 @@ if uploaded_file:
         select_all = st.checkbox("Select All Sheets")
         selected_sheets = st.multiselect("Choose Sheets", sheets, default=sheets if select_all else [])
 
-        # 🔹 NEW RANGE INPUT SYSTEM
-        st.write("### Define Number of m/z Ranges")
-        num_ranges = st.number_input("Number of ranges", min_value=1, max_value=20, value=1, step=1)
+        # ---------------- PROFILE SELECTION ----------------
+        st.write("### Load Saved Range Profile")
+        profile_names = list(profiles.keys())
+        selected_profile = st.selectbox("Select Profile", ["None"] + profile_names)
 
         mz_ranges = []
+
+        if selected_profile != "None":
+            mz_ranges = profiles[selected_profile]["ranges"]
+            update_last_used(selected_profile, profiles)
+            st.success(f"Loaded profile: {selected_profile}")
+
+        # ---------------- MANUAL RANGE INPUT ----------------
+        st.write("### Define Number of m/z Ranges")
+        num_ranges = st.number_input("Number of ranges", min_value=1, max_value=50, value=1, step=1)
+
+        manual_ranges = []
 
         st.write("### Enter m/z Ranges (format: 300-345)")
         for i in range(int(num_ranges)):
@@ -65,13 +129,28 @@ if uploaded_file:
                     parts = range_input.replace("–", "-").split("-")
                     mz_min, mz_max = int(parts[0]), int(parts[1])
                     if mz_min < mz_max:
-                        mz_ranges.append((mz_min, mz_max))
+                        manual_ranges.append((mz_min, mz_max))
                     else:
                         st.warning(f"Range {i+1}: Min should be less than Max")
                 except:
-                    st.warning(f"Range {i+1}: Invalid format (use 300-345)")
+                    st.warning(f"Range {i+1}: Invalid format")
 
-        # Process
+        # Combine manual + profile ranges
+        if manual_ranges:
+            mz_ranges.extend(manual_ranges)
+
+        # ---------------- SAVE PROFILE (MULTI-METABOLITE) ----------------
+        st.write("### Save Range Profile (for multiple metabolites)")
+        profile_name = st.text_input("Profile Name")
+
+        if st.button("Save Profile"):
+            if profile_name and mz_ranges:
+                save_profile(profile_name, mz_ranges)
+                st.success("Profile saved successfully!")
+            else:
+                st.error("Provide name and ranges")
+
+        # ---------------- PROCESS ----------------
         if st.button("Process Data"):
             if not selected_sheets or not mz_ranges:
                 st.error("⚠️ Please select sheets and enter valid ranges.")
@@ -85,14 +164,12 @@ if uploaded_file:
 
                     output.seek(0)
 
-                    # Auto download
                     st.download_button(
                         "⬇️ Download Excel",
                         output,
                         file_name=f"{compound}_data.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     )
-
                 else:
                     st.warning("⚠️ No data found.")
 
