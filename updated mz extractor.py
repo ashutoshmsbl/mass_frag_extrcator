@@ -4,54 +4,61 @@ import io
 import json
 from datetime import datetime, timedelta
 
-# ---------------- SAVE / LOAD RANGE PROFILES ----------------
-def save_profile(name, ranges):
-    try:
-        with open("range_profiles.json", "r") as f:
-            data = json.load(f)
-    except:
-        data = {}
-
-    data[name] = {
-        "ranges": ranges,
-        "last_used": datetime.now().isoformat()
-    }
-
-    with open("range_profiles.json", "w") as f:
-        json.dump(data, f)
+# ---------------- PROFILE FUNCTIONS ----------------
+PROFILE_FILE = "range_profiles.json"
 
 
 def load_profiles():
     try:
-        with open("range_profiles.json", "r") as f:
+        with open(PROFILE_FILE, "r") as f:
             data = json.load(f)
     except:
         return {}
 
-    # 🔥 AUTO DELETE OLD PROFILES (>90 days)
-    cleaned_data = {}
+    # Auto delete >90 days
     now = datetime.now()
-
+    cleaned = {}
     for name, info in data.items():
-        last_used = datetime.fromisoformat(info.get("last_used", now.isoformat()))
-        if now - last_used <= timedelta(days=90):
-            cleaned_data[name] = info
+        last = datetime.fromisoformat(info.get("last_used", now.isoformat()))
+        if now - last <= timedelta(days=90):
+            cleaned[name] = info
 
-    # overwrite cleaned file
-    with open("range_profiles.json", "w") as f:
-        json.dump(cleaned_data, f)
+    with open(PROFILE_FILE, "w") as f:
+        json.dump(cleaned, f)
 
-    return cleaned_data
-
-
-def update_last_used(profile_name, data):
-    if profile_name in data:
-        data[profile_name]["last_used"] = datetime.now().isoformat()
-        with open("range_profiles.json", "w") as f:
-            json.dump(data, f)
+    return cleaned
 
 
-# Function to extract m/z data
+def save_profiles(data):
+    with open(PROFILE_FILE, "w") as f:
+        json.dump(data, f)
+
+
+def save_profile(name, ranges, profiles):
+    profiles[name] = {
+        "ranges": ranges,
+        "last_used": datetime.now().isoformat()
+    }
+    save_profiles(profiles)
+
+
+def delete_profile(name, profiles):
+    if name in profiles:
+        del profiles[name]
+        save_profiles(profiles)
+
+
+def clear_all_profiles():
+    save_profiles({})
+
+
+def update_last_used(name, profiles):
+    if name in profiles:
+        profiles[name]["last_used"] = datetime.now().isoformat()
+        save_profiles(profiles)
+
+
+# ---------------- CORE FUNCTION ----------------
 def extract_mz_abundance(uploaded_file, compound, selected_sheets, mz_ranges):
     xl = pd.ExcelFile(uploaded_file)
     output_data = {}
@@ -77,101 +84,109 @@ def extract_mz_abundance(uploaded_file, compound, selected_sheets, mz_ranges):
         combined_df = pd.concat(output_data.values(), axis=1)
         combined_df.reset_index(inplace=True)
         return combined_df
-    else:
-        return None
+    return None
 
 
 # ---------------- UI ----------------
 st.title("13C Mass Fragment Data Extraction Tool")
 
-uploaded_file = st.file_uploader("Upload Excel File", type=['xlsx'])
-
 profiles = load_profiles()
 
+uploaded_file = st.file_uploader("Upload Excel File", type=['xlsx'])
+
 if uploaded_file:
-    try:
-        xl = pd.ExcelFile(uploaded_file)
-        sheets = xl.sheet_names
-        df_sample = xl.parse(sheets[0])
+    xl = pd.ExcelFile(uploaded_file)
+    sheets = xl.sheet_names
+    df_sample = xl.parse(sheets[0])
 
-        compounds = [col for col in df_sample.columns if not (col.lower().startswith("m/z") or "unnamed" in col.lower())]
+    compounds = [col for col in df_sample.columns if not (col.lower().startswith("m/z") or "unnamed" in col.lower())]
 
-        compound = st.selectbox("Select Compound", compounds)
+    compound = st.selectbox("Select Compound", compounds)
 
-        # Sheet selection
-        st.write("### Select Data Files")
-        select_all = st.checkbox("Select All Sheets")
-        selected_sheets = st.multiselect("Choose Sheets", sheets, default=sheets if select_all else [])
+    # Sheet selection
+    st.write("### Select Data Files")
+    select_all = st.checkbox("Select All Sheets")
+    selected_sheets = st.multiselect("Choose Sheets", sheets, default=sheets if select_all else [])
 
-        # ---------------- PROFILE SELECTION ----------------
-        st.write("### Load Saved Range Profile")
-        profile_names = list(profiles.keys())
-        selected_profile = st.selectbox("Select Profile", ["None"] + profile_names)
+    # -------- PROFILE LOAD --------
+    st.write("### Load Saved Profile")
+    profile_names = list(profiles.keys())
+    selected_profile = st.selectbox("Select Profile", ["None"] + profile_names)
 
-        mz_ranges = []
+    mz_ranges = []
 
-        if selected_profile != "None":
-            mz_ranges = profiles[selected_profile]["ranges"]
-            update_last_used(selected_profile, profiles)
-            st.success(f"Loaded profile: {selected_profile}")
+    if selected_profile != "None":
+        mz_ranges = profiles[selected_profile]["ranges"]
+        update_last_used(selected_profile, profiles)
 
-        # ---------------- MANUAL RANGE INPUT ----------------
-        st.write("### Define Number of m/z Ranges")
-        num_ranges = st.number_input("Number of ranges", min_value=1, max_value=50, value=1, step=1)
-
-        manual_ranges = []
-
-        st.write("### Enter m/z Ranges (format: 300-345)")
-        for i in range(int(num_ranges)):
-            range_input = st.text_input(f"Range {i+1}", key=f"range_{i}")
-            if range_input:
+        st.write("#### Loaded Ranges")
+        for i, r in enumerate(mz_ranges):
+            col1, col2 = st.columns([4,1])
+            new_val = col1.text_input(f"Edit Range {i+1}", f"{r[0]}-{r[1]}", key=f"edit_{i}")
+            if col2.button("❌", key=f"del_{i}"):
+                mz_ranges.pop(i)
+                st.rerun()
+            else:
                 try:
-                    parts = range_input.replace("–", "-").split("-")
-                    mz_min, mz_max = int(parts[0]), int(parts[1])
-                    if mz_min < mz_max:
-                        manual_ranges.append((mz_min, mz_max))
-                    else:
-                        st.warning(f"Range {i+1}: Min should be less than Max")
+                    parts = new_val.replace("–","-").split("-")
+                    mz_ranges[i] = (int(parts[0]), int(parts[1]))
                 except:
-                    st.warning(f"Range {i+1}: Invalid format")
+                    pass
 
-        # Combine manual + profile ranges
-        if manual_ranges:
-            mz_ranges.extend(manual_ranges)
+        # Delete profile
+        if st.button("Delete This Profile"):
+            delete_profile(selected_profile, profiles)
+            st.success("Profile deleted")
+            st.rerun()
 
-        # ---------------- SAVE PROFILE (MULTI-METABOLITE) ----------------
-        st.write("### Save Range Profile (for multiple metabolites)")
-        profile_name = st.text_input("Profile Name")
+    # Clear all profiles
+    if st.button("⚠️ Clear All Profiles"):
+        clear_all_profiles()
+        st.success("All profiles deleted")
+        st.rerun()
 
-        if st.button("Save Profile"):
-            if profile_name and mz_ranges:
-                save_profile(profile_name, mz_ranges)
-                st.success("Profile saved successfully!")
+    # -------- MANUAL INPUT --------
+    st.write("### Define Number of m/z Ranges")
+    num_ranges = st.number_input("Number of ranges", 1, 50, 1)
+
+    manual_ranges = []
+    for i in range(int(num_ranges)):
+        val = st.text_input(f"Range {i+1}", key=f"range_{i}")
+        if val:
+            try:
+                p = val.replace("–","-").split("-")
+                manual_ranges.append((int(p[0]), int(p[1])))
+            except:
+                st.warning(f"Invalid format in Range {i+1}")
+
+    if manual_ranges:
+        mz_ranges.extend(manual_ranges)
+
+    # Save profile
+    st.write("### Save Profile")
+    pname = st.text_input("Profile Name")
+
+    if st.button("Save Profile"):
+        if pname and mz_ranges:
+            save_profile(pname, mz_ranges, profiles)
+            st.success("Profile saved")
+        else:
+            st.error("Provide name and ranges")
+
+    # -------- PROCESS --------
+    if st.button("Process Data"):
+        if not selected_sheets or not mz_ranges:
+            st.error("Select sheets and ranges")
+        else:
+            df_result = extract_mz_abundance(uploaded_file, compound, selected_sheets, mz_ranges)
+
+            if df_result is not None:
+                output = io.BytesIO()
+                with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+                    df_result.to_excel(writer, index=False)
+
+                output.seek(0)
+
+                st.download_button("⬇️ Download Excel", output, f"{compound}.xlsx")
             else:
-                st.error("Provide name and ranges")
-
-        # ---------------- PROCESS ----------------
-        if st.button("Process Data"):
-            if not selected_sheets or not mz_ranges:
-                st.error("⚠️ Please select sheets and enter valid ranges.")
-            else:
-                df_result = extract_mz_abundance(uploaded_file, compound, selected_sheets, mz_ranges)
-
-                if df_result is not None:
-                    output = io.BytesIO()
-                    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-                        df_result.to_excel(writer, index=False)
-
-                    output.seek(0)
-
-                    st.download_button(
-                        "⬇️ Download Excel",
-                        output,
-                        file_name=f"{compound}_data.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
-                else:
-                    st.warning("⚠️ No data found.")
-
-    except Exception as e:
-        st.error(f"⚠️ Error loading file: {e}")
+                st.warning("No data found")
