@@ -4,10 +4,9 @@ import io
 import json
 from datetime import datetime, timedelta
 
-# ---------------- PROFILE FUNCTIONS ----------------
 PROFILE_FILE = "range_profiles.json"
 
-
+# ---------------- PROFILE FUNCTIONS ----------------
 def load_profiles():
     try:
         with open(PROFILE_FILE, "r") as f:
@@ -15,7 +14,6 @@ def load_profiles():
     except:
         return {}
 
-    # Auto delete >90 days
     now = datetime.now()
     cleaned = {}
     for name, info in data.items():
@@ -94,6 +92,32 @@ profiles = load_profiles()
 
 uploaded_file = st.file_uploader("Upload Excel File", type=['xlsx'])
 
+# -------- PROFILE EXPORT / IMPORT --------
+st.write("### Profile Management")
+
+# Export profiles
+if profiles:
+    profile_bytes = json.dumps(profiles, indent=2).encode("utf-8")
+    st.download_button(
+        "⬇️ Download Profiles",
+        profile_bytes,
+        file_name="range_profiles_backup.json",
+        mime="application/json"
+    )
+
+# Import profiles
+uploaded_profile_file = st.file_uploader("Upload Profile File (.json)", type=["json"], key="profile_upload")
+
+if uploaded_profile_file:
+    try:
+        imported_profiles = json.load(uploaded_profile_file)
+        profiles.update(imported_profiles)
+        save_profiles(profiles)
+        st.success("Profiles imported successfully!")
+        st.rerun()
+    except:
+        st.error("Invalid profile file")
+
 if uploaded_file:
     xl = pd.ExcelFile(uploaded_file)
     sheets = xl.sheet_names
@@ -114,12 +138,14 @@ if uploaded_file:
     selected_profile = st.selectbox("Select Profile", ["None"] + profile_names)
 
     mz_ranges = []
+    use_manual = True
 
     if selected_profile != "None":
         mz_ranges = profiles[selected_profile]["ranges"]
         update_last_used(selected_profile, profiles)
+        use_manual = False
 
-        st.write("#### Loaded Ranges")
+        st.write("#### Loaded Ranges (Editable)")
         for i, r in enumerate(mz_ranges):
             col1, col2 = st.columns([4,1])
             new_val = col1.text_input(f"Edit Range {i+1}", f"{r[0]}-{r[1]}", key=f"edit_{i}")
@@ -133,36 +159,35 @@ if uploaded_file:
                 except:
                     pass
 
-        # Delete profile
+        if st.button("💾 Save Updated Profile"):
+            save_profile(selected_profile, mz_ranges, profiles)
+            st.success("Profile updated successfully")
+
         if st.button("Delete This Profile"):
             delete_profile(selected_profile, profiles)
             st.success("Profile deleted")
             st.rerun()
 
-    # Clear all profiles
     if st.button("⚠️ Clear All Profiles"):
         clear_all_profiles()
         st.success("All profiles deleted")
         st.rerun()
 
     # -------- MANUAL INPUT --------
-    st.write("### Define Number of m/z Ranges")
-    num_ranges = st.number_input("Number of ranges", 1, 50, 1)
+    if use_manual:
+        st.write("### Define Number of m/z Ranges")
+        num_ranges = st.number_input("Number of ranges", 1, 50, 1)
 
-    manual_ranges = []
-    for i in range(int(num_ranges)):
-        val = st.text_input(f"Range {i+1}", key=f"range_{i}")
-        if val:
-            try:
-                p = val.replace("–","-").split("-")
-                manual_ranges.append((int(p[0]), int(p[1])))
-            except:
-                st.warning(f"Invalid format in Range {i+1}")
+        for i in range(int(num_ranges)):
+            val = st.text_input(f"Range {i+1}", key=f"range_{i}")
+            if val:
+                try:
+                    p = val.replace("–","-").split("-")
+                    mz_ranges.append((int(p[0]), int(p[1])))
+                except:
+                    st.warning(f"Invalid format in Range {i+1}")
 
-    if manual_ranges:
-        mz_ranges.extend(manual_ranges)
-
-    # Save profile
+    # Save new profile
     st.write("### Save Profile")
     pname = st.text_input("Profile Name")
 
